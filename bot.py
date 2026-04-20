@@ -180,7 +180,7 @@ def process_add(m, phone):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("sub_"))
 def sub_prompt(c):
     phone = c.data.split("_", 1)[1]
-    msg = bot.send_message(c.message.chat.id, "💸 Введите сумму для списания (любое число):")
+    msg = bot.send_message(c.message.chat.id, "💸 Введите сумму для списания:")
     bot.register_next_step_handler(msg, process_sub, phone)
 
 def process_sub(m, phone):
@@ -190,12 +190,10 @@ def process_sub(m, phone):
     except:
         bot.send_message(m.chat.id, "❌ Введите корректное число", reply_markup=main_menu(phone))
         return
-    
     user = get_user_by_phone(phone)
     if not user:
         bot.send_message(m.chat.id, "❌ Пользователь не найден", reply_markup=main_menu())
         return
-    
     if user['bonus'] >= amount:
         new_bonus = user['bonus'] - amount
         try:
