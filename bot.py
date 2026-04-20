@@ -8,7 +8,6 @@ import ssl
 from urllib.parse import quote
 import time
 
-# Отключаем проверку SSL для WSL
 ssl._create_default_https_context = ssl._create_unverified_context
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
@@ -19,10 +18,8 @@ SUPABASE_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJ
 bot = telebot.TeleBot(BOT_TOKEN)
 headers = {'apikey': SUPABASE_KEY, 'Authorization': f'Bearer {SUPABASE_KEY}', 'Content-Type': 'application/json'}
 
-# Словарь для хранения сессий (в памяти)
 user_sessions = {}
 
-# Настройки стран
 COUNTRIES = {
     'ru': {'name': 'Россия', 'code': '+7'},
     'ua': {'name': 'Украина', 'code': '+380'},
@@ -75,7 +72,6 @@ def main_menu(phone=None):
                InlineKeyboardButton("📜 История", callback_data=f"hist_{phone}"))
         kb.add(InlineKeyboardButton("➕ Начислить", callback_data=f"add_{phone}"), 
                InlineKeyboardButton("➖ Списать", callback_data=f"sub_{phone}"))
-        kb.add(InlineKeyboardButton("✏️ Своя сумма", callback_data=f"custom_sub_{phone}"))
         kb.add(InlineKeyboardButton("🔄 Сменить", callback_data="change"))
     else:
         kb.add(InlineKeyboardButton("🔑 Войти", callback_data="login"))
@@ -184,81 +180,13 @@ def process_add(m, phone):
 @bot.callback_query_handler(func=lambda c: c.data.startswith("sub_"))
 def sub_prompt(c):
     phone = c.data.split("_", 1)[1]
-    msg = bot.send_message(c.message.chat.id, "💸 Сумма (50/100):")
+    msg = bot.send_message(c.message.chat.id, "💸 Введите сумму для списания (любое число):")
     bot.register_next_step_handler(msg, process_sub, phone)
 
 def process_sub(m, phone):
     try:
-        amt = int(m.text.strip())
-        if amt not in [50, 100]: raise ValueError
-    except:
-        bot.send_message(m.chat.id, "❌ 50 или 100", reply_markup=main_menu(phone))
-        return
-    user = get_user_by_phone(phone)
-    if not user:
-        bot.send_message(m.chat.id, "❌ Ошибка", reply_markup=main_menu())
-        return
-    if user['bonus'] >= amt:
-        new_bonus = user['bonus'] - amt
-        try:
-            requests.patch(f"{SUPABASE_URL}/rest/v1/users?phone=eq.{quote(user['phone'])}", headers=headers, 
-                          json={'bonus': new_bonus}, timeout=5)
-            requests.post(f"{SUPABASE_URL}/rest/v1/transactions", headers=headers,
-                         json={'phone': user['phone'], 'amount': -amt, 'type': 'remove', 
-                               'description': f'🤖 Списано {amt}'}, timeout=5)
-            bot.send_message(m.chat.id, f"✅ -{amt} бонусов\n🎁 Осталось {new_bonus}", reply_markup=main_menu(phone))
-        except:
-            bot.send_message(m.chat.id, "❌ Ошибка", reply_markup=main_menu(phone))
-    else:
-        bot.send_message(m.chat.id, f"❌ Недостаточно! У вас {user['bonus']}", reply_markup=main_menu(phone))
-
-@bot.callback_query_handler(func=lambda c: c.data == "change")
-def change(c):
-    user_sessions.pop(c.message.chat.id, None)
-    bot.edit_message_text("🦒 Выберите страну:", c.message.chat.id, c.message.message_id, reply_markup=country_menu())
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("back_"))
-def back(c):
-    phone = c.data.split("_", 1)[1]
-    user = get_user_by_phone(phone)
-    if user:
-        bot.edit_message_text(f"🦒 Главное меню\n🎁 {user.get('bonus', 0)} бонусов", 
-                             c.message.chat.id, c.message.message_id, reply_markup=main_menu(phone))
-    else:
-        bot.edit_message_text("🦒 Главное меню", c.message.chat.id, c.message.message_id, reply_markup=main_menu())
-
-@bot.callback_query_handler(func=lambda c: c.data == "help")
-def help_menu(c):
-    bot.edit_message_text(
-        "🦒 Помощь\n━━━━━━━━━━━━━━━━━━━━━━━\n"
-        "🔑 Войти - выбор страны и вход по номеру\n"
-        "💰 Баланс - бонусы и уровень\n"
-        "📜 История - последние операции\n"
-        "➕ Начислить - 5% за покупку\n"
-        "➖ Списать - 50 или 100 бонусов\n"
-        "🔄 Сменить - смена пользователя\n━━━━━━━━━━━━━━━━━━━━━━━",
-        c.message.chat.id, c.message.message_id, reply_markup=main_menu())
-
-if __name__ == '__main__':
-    logging.info("✅ Бот запущен!")
-    while True:
-        try:
-            bot.infinity_polling(timeout=60, long_polling_timeout=60)
-        except Exception as e:
-            logging.error(f"Ошибка: {e}")
-            time.sleep(10)
-
-@bot.callback_query_handler(func=lambda c: c.data.startswith("custom_sub_"))
-def custom_sub_prompt(c):
-    phone = c.data.split("_")[2]
-    msg = bot.send_message(c.message.chat.id, "💸 Введите сумму для списания (любое число):")
-    bot.register_next_step_handler(msg, process_custom_sub, phone)
-
-def process_custom_sub(m, phone):
-    try:
         amount = int(m.text.strip())
-        if amount <= 0:
-            raise ValueError
+        if amount <= 0: raise ValueError
     except:
         bot.send_message(m.chat.id, "❌ Введите корректное число", reply_markup=main_menu(phone))
         return
@@ -283,3 +211,39 @@ def process_custom_sub(m, phone):
     else:
         bot.send_message(m.chat.id, f"❌ Недостаточно бонусов! У вас {user['bonus']}", 
                         reply_markup=main_menu(phone))
+
+@bot.callback_query_handler(func=lambda c: c.data == "change")
+def change(c):
+    user_sessions.pop(c.message.chat.id, None)
+    bot.edit_message_text("🦒 Выберите страну:", c.message.chat.id, c.message.message_id, reply_markup=country_menu())
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("back_"))
+def back(c):
+    phone = c.data.split("_", 1)[1]
+    user = get_user_by_phone(phone)
+    if user:
+        bot.edit_message_text(f"🦒 Главное меню\n🎁 {user.get('bonus', 0)} бонусов", 
+                             c.message.chat.id, c.message.message_id, reply_markup=main_menu(phone))
+    else:
+        bot.edit_message_text("🦒 Главное меню", c.message.chat.id, c.message.message_id, reply_markup=main_menu())
+
+@bot.callback_query_handler(func=lambda c: c.data == "help")
+def help_menu(c):
+    bot.edit_message_text(
+        "🦒 Помощь\n━━━━━━━━━━━━━━━━━━━━━━━\n"
+        "🔑 Войти - выбор страны и вход по номеру\n"
+        "💰 Баланс - бонусы и уровень\n"
+        "📜 История - последние операции\n"
+        "➕ Начислить - 5% за покупку\n"
+        "➖ Списать - списание любой суммы\n"
+        "🔄 Сменить - смена пользователя\n━━━━━━━━━━━━━━━━━━━━━━━",
+        c.message.chat.id, c.message.message_id, reply_markup=main_menu())
+
+if __name__ == '__main__':
+    logging.info("✅ Бот запущен!")
+    while True:
+        try:
+            bot.infinity_polling(timeout=60, long_polling_timeout=60)
+        except Exception as e:
+            logging.error(f"Ошибка: {e}")
+            time.sleep(10)
