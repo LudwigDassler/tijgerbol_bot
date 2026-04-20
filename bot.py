@@ -75,6 +75,7 @@ def main_menu(phone=None):
                InlineKeyboardButton("📜 История", callback_data=f"hist_{phone}"))
         kb.add(InlineKeyboardButton("➕ Начислить", callback_data=f"add_{phone}"), 
                InlineKeyboardButton("➖ Списать", callback_data=f"sub_{phone}"))
+        kb.add(InlineKeyboardButton("✏️ Своя сумма", callback_data=f"custom_sub_{phone}"))
         kb.add(InlineKeyboardButton("🔄 Сменить", callback_data="change"))
     else:
         kb.add(InlineKeyboardButton("🔑 Войти", callback_data="login"))
@@ -246,3 +247,39 @@ if __name__ == '__main__':
         except Exception as e:
             logging.error(f"Ошибка: {e}")
             time.sleep(10)
+
+@bot.callback_query_handler(func=lambda c: c.data.startswith("custom_sub_"))
+def custom_sub_prompt(c):
+    phone = c.data.split("_")[2]
+    msg = bot.send_message(c.message.chat.id, "💸 Введите сумму для списания (любое число):")
+    bot.register_next_step_handler(msg, process_custom_sub, phone)
+
+def process_custom_sub(m, phone):
+    try:
+        amount = int(m.text.strip())
+        if amount <= 0:
+            raise ValueError
+    except:
+        bot.send_message(m.chat.id, "❌ Введите корректное число", reply_markup=main_menu(phone))
+        return
+    
+    user = get_user_by_phone(phone)
+    if not user:
+        bot.send_message(m.chat.id, "❌ Пользователь не найден", reply_markup=main_menu())
+        return
+    
+    if user['bonus'] >= amount:
+        new_bonus = user['bonus'] - amount
+        try:
+            requests.patch(f"{SUPABASE_URL}/rest/v1/users?phone=eq.{quote(user['phone'])}", headers=headers, 
+                          json={'bonus': new_bonus}, timeout=5)
+            requests.post(f"{SUPABASE_URL}/rest/v1/transactions", headers=headers,
+                         json={'phone': user['phone'], 'amount': -amount, 'type': 'remove', 
+                               'description': f'🤖 Списано {amount} бонусов'}, timeout=5)
+            bot.send_message(m.chat.id, f"✅ Списано {amount} бонусов!\n🎁 Осталось: {new_bonus}", 
+                            reply_markup=main_menu(phone))
+        except:
+            bot.send_message(m.chat.id, "❌ Ошибка при списании", reply_markup=main_menu(phone))
+    else:
+        bot.send_message(m.chat.id, f"❌ Недостаточно бонусов! У вас {user['bonus']}", 
+                        reply_markup=main_menu(phone))
